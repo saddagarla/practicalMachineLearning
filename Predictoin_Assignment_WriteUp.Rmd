@@ -1,0 +1,110 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Srinivas Addagarla"
+date: "February 18, 2016"
+output: html_document
+---
+
+### Background
+
+Human Activity Recognition (HAR) has emerged as a key research area in the last few years and is gaining increasing attention, especially for the development of context-aware systems. The research has traditionally focused on quantifying a particular activity of people. However, the qunatification of *how well* has only received little attention so far, even though it provides useful information for many potential applications for HAR, like: elderly monitoring, life log systems for monitoring energy expenditure and for supporting weight-loss programs, and digital assistants for weight lifting exercises.
+
+In order to predicate *how welll* an individual performed the assigned activity, six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+
+In this report, our goal will be to use  machine learning algoritmhs to predict the class of activity the individual was performing by using  data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. 
+
+#### Load the data
+```{r}
+## Downoad the file from the cloud and store it in a temporary file
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", dest="pml-training.csv")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", dest="pml-test.csv")
+
+## read the temporary file
+train <- read.csv("pml-training.csv", header=TRUE,na.string=c("NA", "#DIV/0!"), stringsAsFactors=FALSE)
+
+## read the temporary file
+test <- read.csv("pml-test.csv", header=TRUE,na.string=c("NA", "#DIV/0!"), stringsAsFactors=FALSE)
+```
+#### Exploratory analysis and Data preprocessing.
+The training set consists of 19622 observations of 160 variables, with one dependent variable('classe'). Some columns were mostly filled with NA values. These variables do not contribute well to the prediction and adds unnecessary overhead/complexity to the machine learning algorithm. It is better to remove these variables before we train the model. 
+
+Also, it's important to notice that some of the variables in the data set are not related to accelerometer measurements. Treating these variables as potential confounders is not advisable. So we have discarded the following variables: X, user_name, raw_timestamp_part1, raw_timestamp_part2, cvtd_timestamp, new_window and num_window.
+
+
+```{r}
+## remove all columns that have NAs
+nacols.removed <- train[, apply(train, 2, function(x) !any(is.na(x)))] 
+
+# discard X, user_name, raw_timestamp_part1, raw_timestamp_part2, cvtd_timestamp, new_window and num_window.
+cleaned.data <- nacols.removed[,-c(1:7)]
+dim(cleaned.data)
+
+## clean the test dataset as well
+myvars <- names(test) %in% names(cleaned.data) 
+test.data <- test[, myvars]
+
+# make classe a factor variable
+cleaned.data$classe = factor(cleaned.data$classe)
+```
+
+#### Data Partitioning 
+
+The cleaned data set will be divided into two subsets. The larger subset will be used to train the model. The smaller subset is used for validation purpose. The validaton subset is  independent from the 20 cases provided by test data set. Partitioning was performed to obtain a 80% training set and a 20% validation set.
+
+```{R warning=FALSE, message=FALSE}
+require(caret)
+set.seed(20160218)
+inTrain <- createDataPartition(cleaned.data$classe, p=0.80, list=FALSE)
+training.data <- cleaned.data[inTrain,]
+validation.data <- cleaned.data[-inTrain,]
+```
+
+
+#### Train the model
+
+```{R warning=FALSE, message=FALSE}
+require(randomForest)
+```
+
+```{R cache=TRUE}
+rf.model <- randomForest(classe ~ ., data = training.data)
+
+## Print the model parameters
+rf.model
+ 
+```
+**Results:**
+
+* The OOB (out of bag) error rate as reported is 0.37%.
+
+The confusion matrix is indicating that the model fit the training data well. 
+
+Based on the ‘high’ indication for accuracy and the ‘low’ indication for OOB error rate, We decided to use this model going forward, and calculate an expected out of sample error rate using the validation dataset.
+
+
+#### Cross-validation
+Cross validation is a very important step in machine learning. So we explicitly validate our model accuracy on the validation data set that has not been used while training the data.
+
+```{R}
+pred.validation <- predict(rf.model, validation.data)
+confMatrix <- confusionMatrix(data=pred.validation,reference=validation.data$classe)
+
+OutOfSampleErrorRate  <- 1 - confMatrix$overall['Accuracy']
+names(OutOfSampleErrorRate) = 'ErrorRate'
+confMatrix
+```
+ 
+The expected out-of-sample error is reported as `r OutOfSampleErrorRate`
+
+The Kappa statistic value (based on the validation dataset), is 0.9887.
+
+#### Predictions for the given test set
+
+```{R}
+predictions.test <- predict(rf.model, newdata=test.data)
+predictions.test
+```
+
+#### Conclusion
+As can be seen from the confusion matrix this model is very accurate. We did experiment with other models, but the accurcy of this model is much higher than those of other models. The model has 99% accuracy on test data. 
